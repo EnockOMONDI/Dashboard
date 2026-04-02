@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { auth, db, doc, setDoc } from '../firebase';
+import { auth, db, doc, setDoc, collection, query, where, orderBy, onSnapshot } from '../firebase';
 import firebaseConfig from '../firebase-applet-config.json';
 
 export const DeveloperPortal: React.FC = () => {
@@ -13,10 +13,28 @@ export const DeveloperPortal: React.FC = () => {
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const [aiLogs, setAiLogs] = useState<any[]>([]);
 
   const userEmail = auth.currentUser?.email || 'Not Logged In';
   const apiKey = 'Managed in Secrets';
   const baseUrl = window.location.origin + '/api/external';
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, 'ai_logs'),
+      where('uid', '==', auth.currentUser.uid),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAiLogs(logs);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -302,6 +320,57 @@ export const DeveloperPortal: React.FC = () => {
                 If your bot receives HTML instead of JSON, it means the security proxy is active. 
                 Ensure the <code className="text-blue-400">Referer</code> header is set to <code className="text-blue-400">https://ai.studio/</code>.
               </p>
+            </div>
+
+            {/* AI Agent History */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">AI Agent History</h3>
+                <span className="text-[10px] font-bold text-slate-600 bg-slate-800 px-2 py-0.5 rounded-full">
+                  {aiLogs.length} Events
+                </span>
+              </div>
+              
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {aiLogs.length === 0 ? (
+                  <div className="text-center py-8 border border-dashed border-slate-800 rounded-2xl">
+                    <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">No activity recorded yet</p>
+                  </div>
+                ) : (
+                  aiLogs.map((log) => (
+                    <div key={log.id} className="bg-slate-800/50 border border-slate-800 p-4 rounded-2xl space-y-2 transition-all hover:bg-slate-800">
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{log.action}</p>
+                          <p className="text-xs font-bold text-white leading-tight">{log.targetTitle}</p>
+                        </div>
+                        <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-tighter ${
+                          log.status === 'success' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                          log.status === 'failed' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                          'bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse'
+                        }`}>
+                          {log.status}
+                        </div>
+                      </div>
+                      
+                      {log.message && (
+                        <p className="text-[10px] text-slate-400 font-medium italic line-clamp-2">
+                          {log.message}
+                        </p>
+                      )}
+                      
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-700/50">
+                        <p className="text-[8px] font-mono text-slate-500">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </p>
+                        <p className="text-[8px] font-mono text-slate-600">
+                          ID: {log.id.slice(0, 8)}...
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </section>

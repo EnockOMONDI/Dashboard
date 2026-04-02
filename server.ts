@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import 'dotenv/config';
 import { createServer as createViteServer } from 'vite';
 import { initializeApp, getApp, getApps, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -50,9 +51,18 @@ if (getApps().length > 0) {
       adminApp = initializeApp({ projectId: projectIdFromConfig });
     }
   } else {
-    adminApp = initializeApp({
-      projectId: projectIdFromConfig,
-    });
+    try {
+      adminApp = initializeApp({
+        projectId: projectIdFromConfig,
+      });
+      console.log('Initialized Firebase Admin with ADC. Project:', projectIdFromConfig || '(auto-detected)');
+    } catch (e: any) {
+      console.error('CRITICAL: Failed to initialize Firebase Admin. This usually means credentials are missing.');
+      console.error('On Render, you MUST provide the FIREBASE_SERVICE_ACCOUNT environment variable.');
+      console.error('Error Details:', e.message);
+      // We still try to proceed, but Firestore operations will likely fail with "Could not load default credentials"
+      adminApp = getApps().length > 0 ? getApp() : initializeApp({ projectId: projectIdFromConfig });
+    }
   }
 }
 
@@ -70,6 +80,10 @@ const authAdmin = getAuth(adminApp);
     if (error.code === 7 || error.message.includes('PERMISSION_DENIED') || error.message.includes('not found')) {
       console.warn('Firestore connection failed with database ID from config. Falling back to default database.');
       firestoreDb = getFirestore(adminApp);
+    } else if (error.message.includes('Could not load the default credentials')) {
+      console.error('CRITICAL: Firestore could not load credentials on the server.');
+      console.error('ACTION REQUIRED: Go to Firebase Console -> Project Settings -> Service Accounts -> Generate New Private Key.');
+      console.error('Then, add the JSON content to your Render environment variable: FIREBASE_SERVICE_ACCOUNT');
     } else {
       console.error('Firestore connection test failed:', error.message);
     }
@@ -78,7 +92,7 @@ const authAdmin = getAuth(adminApp);
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   console.log("Starting server with Project:", projectIdFromConfig || '(auto-detected)', "Database:", databaseIdFromConfig || '(default)');
 

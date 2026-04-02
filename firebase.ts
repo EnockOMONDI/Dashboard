@@ -1,7 +1,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, deleteDoc, updateDoc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, deleteDoc, updateDoc, getDocFromServer, addDoc } from 'firebase/firestore';
 
 // Import the Firebase configuration
 let firebaseConfig: any = {};
@@ -12,11 +12,17 @@ if (configModules[configPath]) {
   firebaseConfig = (configModules[configPath] as any).default || configModules[configPath];
 }
 
+// @ts-ignore
 const config = {
+  // @ts-ignore
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey,
+  // @ts-ignore
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain,
+  // @ts-ignore
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
+  // @ts-ignore
   appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
+  // @ts-ignore
   firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId || '(default)'
 };
 
@@ -108,5 +114,6 @@ export {
   orderBy,
   onSnapshot,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  addDoc
 };

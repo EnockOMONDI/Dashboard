@@ -44,6 +44,21 @@
         "lastLogin": { "type": "string", "format": "date-time", "description": "Last login timestamp" }
       },
       "required": ["uid", "email"]
+    },
+    "AILog": {
+      "title": "AI Log",
+      "description": "A record of an AI agent operation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "uid": { "type": "string", "description": "Owner's user ID" },
+        "action": { "type": "string", "description": "The action performed (e.g., 'Strategy Generation')" },
+        "targetTitle": { "type": "string", "description": "Title of the entity being processed" },
+        "status": { "type": "string", "enum": ["success", "failed", "processing"], "description": "Status of the operation" },
+        "message": { "type": "string", "description": "Optional status message or error" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the action occurred" }
+      },
+      "required": ["id", "uid", "action", "status", "timestamp"]
     }
   },
   "firestore": {
@@ -54,6 +69,10 @@
     "/users/{uid}": {
       "schema": "User",
       "description": "User profiles for lookup"
+    },
+    "/ai_logs/{logId}": {
+      "schema": "AILog",
+      "description": "History of AI agent attempts and status"
     },
     "/public_inbox/{docId}": {
       "schema": "Entity",
