@@ -1,19 +1,25 @@
 
 import React, { useState, useMemo } from 'react';
-import { Entity, ClientEntity, TaskEntity, KnowledgeEntity } from '../types';
+import ReactQuill from 'react-quill-new';
+import DatePicker from 'react-datepicker';
+import { Entity, ClientEntity, TaskEntity, KnowledgeEntity, Subtask, TaskStatus } from '../types';
 import { EntityCard } from '../components/EntityCard';
 import { PRIORITY_COLORS } from '../constants';
+import { generateTaskStrategy } from '../services/geminiService';
 
 export const ClientsTasks: React.FC<{ 
   entities: Entity[], 
   onAdd: (e: Entity) => void, 
   onDelete: (id: string) => void,
-  onUpdate: (e: Entity) => void
-}> = ({ entities, onAdd, onDelete, onUpdate }) => {
+  onUpdate: (e: Entity) => void,
+  processingTasks: Set<string>
+}> = ({ entities, onAdd, onDelete, onUpdate, processingTasks }) => {
   const [activeTab, setActiveTab] = useState<'tasks' | 'clients'>('tasks');
   const [isAdding, setIsAdding] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [isStrategizing, setIsStrategizing] = useState(false);
+  const [suggestedTools, setSuggestedTools] = useState<{name: string, type: 'existing' | 'new', description: string}[]>([]);
   
   const clients = entities.filter(e => e.type === 'client') as ClientEntity[];
   const tasks = entities.filter(e => e.type === 'task') as TaskEntity[];
@@ -24,9 +30,13 @@ export const ClientsTasks: React.FC<{
     title: '', 
     clientId: '', 
     priority: 'Medium' as any, 
-    dueDate: '',
-    description: '',
-    relatedIds: [] as string[]
+    deadlineDate: '',
+    notes: '',
+    relatedIds: [] as string[],
+    subtasks: [] as Subtask[],
+    strategicObjective: '',
+    successMetric: '',
+    toolIds: [] as string[]
   });
 
   const filteredTasks = useMemo(() => {
@@ -44,36 +54,100 @@ export const ClientsTasks: React.FC<{
       title: task.title,
       clientId: task.clientId || '',
       priority: task.priority || 'Medium',
-      dueDate: task.dueDate || '',
-      description: task.description || '',
-      relatedIds: task.relatedIds || []
+      deadlineDate: task.deadlineDate || '',
+      notes: task.notes || '',
+      relatedIds: task.relatedIds || [],
+      subtasks: task.subtasks || [],
+      strategicObjective: task.strategicObjective || '',
+      successMetric: task.successMetric || '',
+      toolIds: task.toolIds || []
     });
     setIsAdding(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleAIStrategist = async () => {
+    if (!taskForm.title) return;
+    setIsStrategizing(true);
+    try {
+      const existingToolNames = knowledge.map(k => k.title);
+      const strategy = await generateTaskStrategy(taskForm.title, taskForm.notes, existingToolNames);
+      
+      if (strategy) {
+        console.log("AI Strategy received:", strategy);
+        
+        // Ensure subtasks have IDs for React keys and status toggling
+        const subtasksWithIds = (strategy.subtasks || []).map((s: any) => ({
+          id: s.id || crypto.randomUUID(),
+          title: s.title || '',
+          status: s.status || 'Todo'
+        }));
+
+        setTaskForm(prev => ({
+          ...prev,
+          title: strategy.refinedTitle || prev.title,
+          strategicObjective: strategy.strategicObjective || '',
+          successMetric: strategy.successMetric || '',
+          notes: strategy.expandedNotes ? `${prev.notes}<br/>${strategy.expandedNotes}` : prev.notes,
+          subtasks: subtasksWithIds
+        }));
+        setSuggestedTools(strategy.suggestedTools || []);
+      }
+    } catch (error) {
+      console.error("AI Strategist failed:", error);
+    } finally {
+      setIsStrategizing(false);
+    }
+  };
+
+  const toggleSubtaskStatus = (subtaskId: string) => {
+    const updatedSubtasks = taskForm.subtasks.map(s => {
+      if (s.id === subtaskId) {
+        const nextStatus: TaskStatus = s.status === 'Todo' ? 'In Progress' : s.status === 'In Progress' ? 'Done' : 'Todo';
+        return { ...s, status: nextStatus };
+      }
+      return s;
+    });
+
+    setTaskForm(prev => ({ ...prev, subtasks: updatedSubtasks }));
+  };
+
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Determine overall task status based on subtasks
+    let overallStatus: TaskStatus = 'Todo';
+    if (taskForm.subtasks.some(s => s.status === 'In Progress')) {
+      overallStatus = 'In Progress';
+    } else if (taskForm.subtasks.length > 0 && taskForm.subtasks.every(s => s.status === 'Done')) {
+      overallStatus = 'Done';
+    }
+
     const commonData = {
       title: taskForm.title,
       clientId: taskForm.clientId || undefined,
       priority: taskForm.priority,
-      dueDate: taskForm.dueDate,
-      description: taskForm.description,
+      deadlineDate: taskForm.deadlineDate,
+      notes: taskForm.notes,
       relatedIds: taskForm.relatedIds,
+      subtasks: taskForm.subtasks,
+      strategicObjective: taskForm.strategicObjective,
+      successMetric: taskForm.successMetric,
+      toolIds: taskForm.toolIds,
+      status: overallStatus,
       updatedAt: new Date().toISOString()
     };
 
     if (editingTaskId) {
       const existing = tasks.find(t => t.id === editingTaskId);
       if (existing) {
-        onUpdate({ ...existing, ...commonData });
+        onUpdate({ ...existing, ...commonData } as TaskEntity);
       }
     } else {
       const newTask: TaskEntity = {
         id: crypto.randomUUID(),
+        uid: '',
         type: 'task',
-        status: 'Todo',
         createdAt: new Date().toISOString(),
         ...commonData
       } as TaskEntity;
@@ -82,13 +156,26 @@ export const ClientsTasks: React.FC<{
 
     setIsAdding(false);
     setEditingTaskId(null);
-    setTaskForm({ title: '', clientId: '', priority: 'Medium', dueDate: '', description: '', relatedIds: [] });
+    setTaskForm({ 
+      title: '', 
+      clientId: '', 
+      priority: 'Medium', 
+      deadlineDate: '', 
+      notes: '', 
+      relatedIds: [],
+      subtasks: [],
+      strategicObjective: '',
+      successMetric: '',
+      toolIds: []
+    });
+    setSuggestedTools([]);
   };
 
   const handleAddClient = (e: React.FormEvent) => {
     e.preventDefault();
     const newClient: ClientEntity = {
       id: crypto.randomUUID(),
+      uid: '',
       type: 'client',
       title: clientForm.title,
       industry: clientForm.industry,
@@ -196,28 +283,166 @@ export const ClientsTasks: React.FC<{
                 <div className="space-y-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Task Definition</label>
-                    <input 
-                      required 
-                      placeholder="What needs to be done?" 
-                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-base font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
-                      value={taskForm.title} 
-                      onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
-                    />
+                    <div className="flex gap-2">
+                      <input 
+                        required 
+                        placeholder="What needs to be done?" 
+                        className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-base font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                        value={taskForm.title} 
+                        onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAIStrategist}
+                        disabled={isStrategizing || !taskForm.title}
+                        className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 whitespace-nowrap shadow-sm ${
+                          isStrategizing ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100'
+                        }`}
+                      >
+                        {isStrategizing ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                            Strategizing...
+                          </>
+                        ) : (
+                          <>✨ AI Strategist</>
+                        )}
+                      </button>
+                    </div>
                   </div>
+
+                  {taskForm.strategicObjective && (
+                    <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-2xl space-y-2">
+                      <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Strategic Objective</h4>
+                      <p className="text-sm text-slate-700 leading-relaxed italic">"{taskForm.strategicObjective}"</p>
+                    </div>
+                  )}
                   
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Contextual Description</label>
-                    <textarea 
-                      placeholder="Add strategic nuances or sub-tasks..." 
-                      rows={4}
-                      className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none" 
-                      value={taskForm.description} 
-                      onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
-                    />
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Notes & Context</label>
+                    <div className="bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
+                      <ReactQuill 
+                        theme="snow" 
+                        placeholder="Add strategic nuances or sub-tasks..." 
+                        value={taskForm.notes} 
+                        onChange={val => setTaskForm({...taskForm, notes: val})}
+                        className="bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Execution Roadmap (Subtasks)</label>
+                    <div className="space-y-2">
+                      {taskForm.subtasks.map((sub, idx) => (
+                        <div key={sub.id || idx} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 group">
+                          <button
+                            type="button"
+                            onClick={() => toggleSubtaskStatus(sub.id)}
+                            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+                              sub.status === 'Done' ? 'bg-green-500 border-green-500 text-white' : 
+                              sub.status === 'In Progress' ? 'bg-blue-500 border-blue-500 text-white' : 
+                              'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {sub.status === 'Done' && '✓'}
+                            {sub.status === 'In Progress' && '⋯'}
+                          </button>
+                          <input
+                            className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-slate-700"
+                            value={sub.title}
+                            onChange={(e) => {
+                              const updated = [...taskForm.subtasks];
+                              updated[idx].title = e.target.value;
+                              setTaskForm({...taskForm, subtasks: updated});
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = taskForm.subtasks.filter((_, i) => i !== idx);
+                              setTaskForm({...taskForm, subtasks: updated});
+                            }}
+                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setTaskForm({...taskForm, subtasks: [...taskForm.subtasks, { id: crypto.randomUUID(), title: '', status: 'Todo' }]})}
+                        className="w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:border-blue-400 hover:text-blue-500 transition-all"
+                      >
+                        ＋ Add Step
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
+                  {suggestedTools.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">AI Suggested Toolbox</label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {suggestedTools.map((tool, idx) => {
+                          const isAlreadyInBrain = knowledge.find(k => k.title.toLowerCase() === tool.name.toLowerCase());
+                          const isSelected = taskForm.toolIds.includes(isAlreadyInBrain?.id || '') || taskForm.relatedIds.includes(isAlreadyInBrain?.id || '');
+                          
+                          return (
+                            <div key={idx} className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100">
+                              <div>
+                                <h5 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                                  {tool.name}
+                                  {tool.type === 'new' && !isAlreadyInBrain && <span className="text-[8px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded uppercase tracking-tighter">New</span>}
+                                </h5>
+                                <p className="text-[10px] text-slate-500 line-clamp-1">{tool.description}</p>
+                              </div>
+                              {isAlreadyInBrain ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const ids = taskForm.relatedIds.includes(isAlreadyInBrain.id) 
+                                      ? taskForm.relatedIds.filter(id => id !== isAlreadyInBrain.id)
+                                      : [...taskForm.relatedIds, isAlreadyInBrain.id];
+                                    setTaskForm({...taskForm, relatedIds: ids});
+                                  }}
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all border ${
+                                    taskForm.relatedIds.includes(isAlreadyInBrain.id) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
+                                  }`}
+                                >
+                                  {taskForm.relatedIds.includes(isAlreadyInBrain.id) ? 'Linked' : 'Link'}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newTool: KnowledgeEntity = {
+                                      id: crypto.randomUUID(),
+                                      uid: '',
+                                      type: 'knowledge',
+                                      title: tool.name,
+                                      category: 'ai-code',
+                                      summary: tool.description,
+                                      promptResponse: `AI suggested tool for task: ${taskForm.title}`,
+                                      createdAt: new Date().toISOString(),
+                                      updatedAt: new Date().toISOString()
+                                    };
+                                    onAdd(newTool);
+                                    setTaskForm(prev => ({...prev, relatedIds: [...prev.relatedIds, newTool.id]}));
+                                  }}
+                                  className="px-3 py-1 bg-white text-blue-600 border border-blue-200 rounded-lg text-[10px] font-bold hover:bg-blue-50 transition-all"
+                                >
+                                  ✨ Add to Brain
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Client Association</label>
@@ -233,6 +458,20 @@ export const ClientsTasks: React.FC<{
                         <option>Medium</option>
                         <option>High</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Deadline to Beat</label>
+                    <div className="w-full">
+                      <DatePicker
+                        selected={taskForm.deadlineDate ? new Date(taskForm.deadlineDate) : null}
+                        onChange={(date: Date | null) => setTaskForm({...taskForm, deadlineDate: date ? date.toISOString() : ''})}
+                        placeholderText="Select a deadline..."
+                        className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        dateFormat="MMMM d, yyyy"
+                        isClearable
+                      />
                     </div>
                   </div>
 
@@ -304,9 +543,17 @@ export const ClientsTasks: React.FC<{
                   className={`group border p-4 rounded-2xl transition-all cursor-pointer flex items-center justify-between ${getTaskStyles(task)}`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`w-2 h-10 rounded-full ${task.status === 'Done' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]'}`}></div>
+                    <div className={`w-2 h-10 rounded-full ${task.status === 'Done' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : task.status === 'In Progress' ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.3)]' : 'bg-slate-300 shadow-[0_0_8px_rgba(203,213,225,0.3)]'}`}></div>
                     <div>
-                      <h3 className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{task.title}</h3>
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{task.title}</h3>
+                        {processingTasks.has(task.id) && (
+                          <span className="text-[9px] font-black uppercase tracking-[0.15em] px-2 py-0.5 rounded-md bg-blue-600 text-white flex items-center gap-1 animate-pulse">
+                            <span className="w-1 h-1 bg-white rounded-full animate-bounce"></span>
+                            Thinking...
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 mt-1">
                         {client && <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{client.title}</span>}
                         {client && <span className="w-1 h-1 bg-slate-200 rounded-full"></span>}
@@ -314,10 +561,44 @@ export const ClientsTasks: React.FC<{
                           {task.priority}
                         </span>
                         <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                          task.status === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 
+                          task.status === 'In Progress' ? 'bg-blue-100 text-blue-700 border-blue-200' : 
+                          'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}>
+                          {task.status}
+                          {task.subtasks && task.subtasks.length > 0 && (
+                            <span className="ml-1 opacity-60">
+                              ({task.subtasks.filter(s => s.status === 'Done').length}/{task.subtasks.length})
+                            </span>
+                          )}
+                        </span>
+                        {task.deadlineDate && (
+                          <>
+                            <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
+                            <span className="text-[10px] text-red-500 font-bold uppercase tracking-tighter">
+                              Deadline: {new Date(task.deadlineDate).toLocaleDateString()}
+                            </span>
+                          </>
+                        )}
+                        <span className="w-1 h-1 bg-slate-200 rounded-full"></span>
                         <span className="text-[10px] text-slate-500 font-medium">
                           {formatDateWithOrdinal(task.createdAt)}
                         </span>
                       </div>
+                      {task.subtasks && task.subtasks.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {task.subtasks.slice(0, 3).map(sub => (
+                            <div key={sub.id} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                              <div className={`w-1.5 h-1.5 rounded-full ${sub.status === 'Done' ? 'bg-green-500' : sub.status === 'In Progress' ? 'bg-blue-500' : 'bg-slate-300'}`}></div>
+                              <span className={`text-[9px] font-bold ${sub.status === 'Done' ? 'text-slate-400 line-through' : 'text-slate-600'}`}>{sub.title}</span>
+                            </div>
+                          ))}
+                          {task.subtasks.length > 3 && (
+                            <span className="text-[9px] font-black text-slate-300 uppercase tracking-tighter flex items-center">+{task.subtasks.length - 3} more</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   
@@ -354,6 +635,7 @@ export const ClientsTasks: React.FC<{
                   entity={client} 
                   onDelete={onDelete} 
                   onClick={() => handleClientClick(client.id)}
+                  isProcessing={processingTasks.has(client.id)}
                 />
                 <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-all">
                   <span className="text-[10px] bg-black text-white px-3 py-1.5 rounded-xl font-bold uppercase tracking-widest shadow-xl pointer-events-none">

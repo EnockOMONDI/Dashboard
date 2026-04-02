@@ -7,6 +7,7 @@ export type SocialPlatform = 'YouTube' | 'Twitter/X' | 'Skool' | 'GitHub' | 'Oth
 
 export interface BaseEntity {
   id: string;
+  uid?: string;
   type: EntityType;
   title: string;
   createdAt: string;
@@ -55,14 +56,25 @@ export interface ClientEntity extends BaseEntity {
   status: "Active" | "Inactive";
 }
 
+export type TaskStatus = "Todo" | "In Progress" | "Done";
+
+export interface Subtask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+}
+
 export interface TaskEntity extends BaseEntity {
   type: "task";
   clientId?: string;
-  dueDate?: string;
-  description?: string;
-  status: "Todo" | "In Progress" | "Done";
+  deadlineDate?: string;
+  status: TaskStatus;
   isFocused?: boolean;
   timeSpentMinutes?: number; // Tracking velocity
+  subtasks?: Subtask[];
+  strategicObjective?: string;
+  successMetric?: string;
+  toolIds?: string[];
 }
 
 export interface SubscriptionEntity extends BaseEntity {

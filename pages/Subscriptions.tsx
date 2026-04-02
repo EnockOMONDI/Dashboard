@@ -3,7 +3,12 @@ import React, { useState } from 'react';
 import { Entity, SubscriptionEntity } from '../types';
 import { EntityCard } from '../components/EntityCard';
 
-export const Subscriptions: React.FC<{ entities: Entity[], onAdd: (e: Entity) => void, onDelete: (id: string) => void }> = ({ entities, onAdd, onDelete }) => {
+export const Subscriptions: React.FC<{ 
+  entities: Entity[], 
+  onAdd: (e: Entity) => void, 
+  onDelete: (id: string) => void,
+  processingTasks: Set<string>
+}> = ({ entities, onAdd, onDelete, processingTasks }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({ name: '', cost: '', cycle: 'Monthly' as any, why: '' });
 
@@ -14,6 +19,7 @@ export const Subscriptions: React.FC<{ entities: Entity[], onAdd: (e: Entity) =>
     e.preventDefault();
     const newSub: SubscriptionEntity = {
       id: crypto.randomUUID(),
+      uid: '',
       type: 'subscription',
       title: formData.name,
       cost: parseFloat(formData.cost),
@@ -67,7 +73,7 @@ export const Subscriptions: React.FC<{ entities: Entity[], onAdd: (e: Entity) =>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {subscriptions.map(sub => (
-          <EntityCard key={sub.id} entity={sub} onDelete={onDelete} />
+          <EntityCard key={sub.id} entity={sub} onDelete={onDelete} isProcessing={processingTasks.has(sub.id)} />
         ))}
       </div>
     </div>

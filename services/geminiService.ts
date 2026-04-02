@@ -40,6 +40,64 @@ export async function getDailyRecommendations(entities: Entity[]) {
   }
 }
 
+export async function generateTaskStrategy(title: string, notes: string, existingTools: string[]) {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  const prompt = `
+    You are a Senior Project Manager and Strategic Systems Thinker.
+    Analyze the following task and notes to create a high-leverage execution strategy.
+
+    Task Title: ${title}
+    Rough Notes: ${notes}
+    Existing Tools in Knowledge Brain: ${existingTools.join(", ")}
+
+    Your goal is to:
+    1. Refine the title for maximum clarity and impact.
+    2. Define a clear Strategic Objective (The "Why").
+    3. Define a Success Metric (How to know it's "Done-Done").
+    4. Expand the notes into a professional, structured project brief.
+    5. Generate up to 10 actionable subtasks (The "Roadmap").
+    6. Suggest tools that are best suited for this job. 
+       - If a tool exists in the Knowledge Brain, flag it as "existing".
+       - If it's a new suggestion, flag it as "new".
+       - Provide a brief description for new tools.
+
+    Return a JSON object:
+    {
+      "refinedTitle": "string",
+      "strategicObjective": "string",
+      "successMetric": "string",
+      "expandedNotes": "string (Markdown formatted)",
+      "subtasks": [
+        { "title": "string", "status": "Todo" }
+      ],
+      "suggestedTools": [
+        { "name": "string", "type": "existing" | "new", "description": "string" }
+      ]
+    }
+
+    CRITICAL: You MUST always return at least 5-10 actionable subtasks in the "subtasks" array. Do not return an empty array.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+    
+    const text = response.text;
+    if (!text) return null;
+    
+    // Clean up response text in case of markdown blocks
+    const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(jsonStr);
+  } catch (error) {
+    console.error("generateTaskStrategy failed:", error);
+    return null;
+  }
+}
+
 export async function scoutJobDetails(url: string) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 

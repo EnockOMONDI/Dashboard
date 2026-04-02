@@ -7,9 +7,10 @@ interface EntityCardProps {
   entity: Entity;
   onDelete?: (id: string) => void;
   onClick?: (entity: Entity) => void;
+  isProcessing?: boolean;
 }
 
-export const EntityCard: React.FC<EntityCardProps> = ({ entity, onDelete, onClick }) => {
+export const EntityCard: React.FC<EntityCardProps> = ({ entity, onDelete, onClick, isProcessing }) => {
   const getIcon = () => {
     switch (entity.type) {
       case 'knowledge': 
@@ -58,6 +59,12 @@ export const EntityCard: React.FC<EntityCardProps> = ({ entity, onDelete, onClic
           {getIcon()}
         </div>
         <div className="flex flex-col items-end gap-1.5">
+          {isProcessing && (
+            <span className="text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-lg border shadow-sm bg-blue-600 text-white border-blue-700 flex items-center gap-1.5 animate-pulse">
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-bounce"></span>
+              Thinking...
+            </span>
+          )}
           {entity.priority && (
             <span className={`text-[9px] font-black uppercase tracking-[0.15em] px-2.5 py-1 rounded-lg border shadow-sm ${PRIORITY_COLORS[entity.priority]}`}>
               {entity.priority}
@@ -78,21 +85,37 @@ export const EntityCard: React.FC<EntityCardProps> = ({ entity, onDelete, onClic
         </div>
       )}
 
-      {(entity.type === 'knowledge' || entity.type === 'client') && (
-        <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed font-medium">
-          {entity.notes || (entity as any).summary || (entity as any).industry}
-        </p>
+      {(entity.type === 'knowledge' || entity.type === 'client' || entity.type === 'task') && (
+        <div className="text-xs text-slate-500 line-clamp-2 leading-relaxed font-medium">
+          {entity.notes ? (
+            <div dangerouslySetInnerHTML={{ __html: entity.notes }} className="prose prose-sm max-w-none" />
+          ) : (
+            (entity as any).summary || (entity as any).industry
+          )}
+        </div>
       )}
 
       {isTask && task && (
-        <div className="mt-4 flex items-center justify-between">
-           <div className="flex items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
-            <span className={`w-2.5 h-2.5 rounded-full mr-2 shadow-sm ${task.status === 'Done' ? 'bg-green-500' : 'bg-blue-500 animate-pulse'}`}></span>
-            {task.status}
+        <div className="mt-4 flex flex-col gap-3">
+          {task.deadlineDate && (
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Deadline to Beat</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${
+                new Date(task.deadlineDate) < new Date() ? 'bg-red-50 border-red-100 text-red-600' : 'bg-blue-50 border-blue-100 text-blue-600'
+              }`}>
+                {new Date(task.deadlineDate).toLocaleDateString()}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+             <div className="flex items-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+              <span className={`w-2.5 h-2.5 rounded-full mr-2 shadow-sm ${task.status === 'Done' ? 'bg-green-500' : 'bg-blue-500 animate-pulse'}`}></span>
+              {task.status}
+            </div>
+            <button className="text-[10px] text-blue-600 font-black bg-blue-50 px-3 py-1.5 rounded-xl hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest border border-blue-100">
+              Launch Deep Work
+            </button>
           </div>
-          <button className="text-[10px] text-blue-600 font-black bg-blue-50 px-3 py-1.5 rounded-xl hover:bg-blue-600 hover:text-white transition-all uppercase tracking-widest border border-blue-100">
-            Launch Deep Work
-          </button>
         </div>
       )}
 

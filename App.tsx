@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import { Entity } from './types';
 import { storage } from './services/storage';
@@ -9,23 +10,74 @@ import { KnowledgeBrain } from './pages/KnowledgeBrain';
 import { JobsPipeline } from './pages/JobsPipeline';
 import { ClientsTasks } from './pages/ClientsTasks';
 import { Subscriptions } from './pages/Subscriptions';
+import { DeveloperPortal } from './pages/DeveloperPortal';
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged, query, collection, where, orderBy, onSnapshot, db, doc, setDoc, getDocs, deleteDoc, handleFirestoreError, OperationType } from './firebase';
+import { generateTaskStrategy } from './services/geminiService';
 
-// Global declaration for AI Studio environment
-declare global {
-  var aistudio: {
-    hasSelectedApiKey: () => Promise<boolean>;
-    openSelectKey: () => Promise<void>;
-  };
+// Error Boundary Component
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
 }
 
-const AuthGate: React.FC<{ onAuthenticated: () => void }> = ({ onAuthenticated }) => {
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends (React.Component as any) {
+  public state: ErrorBoundaryState = { hasError: false, error: null };
+
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let errorMessage = "Something went wrong.";
+      try {
+        const parsedError = JSON.parse(this.state.error?.message || "");
+        if (parsedError.error) {
+          errorMessage = `Database Error: ${parsedError.error}`;
+        }
+      } catch (e) {
+        errorMessage = this.state.error?.message || errorMessage;
+      }
+
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-white border border-red-100 shadow-2xl rounded-3xl p-12 text-center space-y-6">
+            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full mx-auto flex items-center justify-center text-4xl">⚠️</div>
+            <h1 className="text-2xl font-bold text-slate-900">Application Error</h1>
+            <p className="text-slate-500">{errorMessage}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-all"
+            >
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const AuthGate: React.FC = () => {
   const handleAuth = async () => {
     try {
-      await window.aistudio.openSelectKey();
-      // Assume success to handle the race condition in the environment
-      onAuthenticated();
+      await signInWithPopup(auth, googleProvider);
     } catch (error) {
-      console.error("Authentication gate error:", error);
+      console.error("Authentication error:", error);
     }
   };
 
@@ -51,13 +103,13 @@ const AuthGate: React.FC<{ onAuthenticated: () => void }> = ({ onAuthenticated }
             </svg>
             <span>Log in with Google</span>
           </button>
-          <p className="text-[10px] text-slate-400 font-medium italic">Data is stored securely in your browser's local vault.</p>
+          <p className="text-[10px] text-slate-400 font-medium italic">Data is stored securely in your Firebase vault.</p>
         </div>
 
         <div className="pt-8 border-t border-slate-100 flex justify-center space-x-8 opacity-50">
           <div className="text-center">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Persistence</p>
-            <p className="text-xs font-bold text-slate-600">Local-First</p>
+            <p className="text-xs font-bold text-slate-600">Firebase</p>
           </div>
           <div className="text-center">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Logic</p>
@@ -71,50 +123,177 @@ const AuthGate: React.FC<{ onAuthenticated: () => void }> = ({ onAuthenticated }
 
 const App: React.FC = () => {
   const [entities, setEntities] = useState<Entity[]>([]);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [processingTasks, setProcessingTasks] = useState<Set<string>>(new Set());
+  
+  const hasLoadedFromStorage = useRef(false);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const hasKey = await window.aistudio.hasSelectedApiKey();
-      setIsAuthenticated(hasKey);
-    };
-    checkAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setUser(user);
+      setIsAuthReady(true);
+      
+      if (user) {
+        // Sync user profile to Firestore for server-side lookup
+        try {
+          const userRef = doc(db, 'users', user.uid);
+          const emailToSync = user.email?.toLowerCase().trim();
+          console.log("Syncing user profile for email:", emailToSync);
+          await setDoc(userRef, {
+            uid: user.uid,
+            email: emailToSync,
+            displayName: user.displayName,
+            lastLogin: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+          console.log("User profile synced to vault.");
+          
+          // Sweep public inbox for this user
+          try {
+            const inboxQuery = query(
+              collection(db, 'public_inbox'),
+              where('userEmail', '==', user.email?.toLowerCase())
+            );
+            const inboxSnap = await getDocs(inboxQuery);
+            if (!inboxSnap.empty) {
+              console.log(`Found ${inboxSnap.docs.length} items in public inbox. Sweeping...`);
+              for (const inboxDoc of inboxSnap.docs) {
+                const data = inboxDoc.data();
+                await setDoc(doc(db, 'entities', inboxDoc.id), {
+                  ...data,
+                  uid: user.uid
+                });
+                await deleteDoc(inboxDoc.ref);
+              }
+              console.log("Inbox sweep completed.");
+            }
+          } catch (sweepError) {
+            console.warn("Inbox sweep failed (this is normal if no items exist):", sweepError);
+          }
+        } catch (error) {
+          console.error("User profile sync error:", error);
+          handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
+        }
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
-  // When authenticated, we re-hydrate the state from storage
   useEffect(() => {
-    if (isAuthenticated) {
-      const data = storage.loadEntities();
-      setEntities(data);
-    }
-  }, [isAuthenticated]);
+    if (isAuthReady && user) {
+      console.log("Auth confirmed, establishing real-time link to vault...");
+      
+      const q = query(
+        collection(db, 'entities'),
+        where('uid', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
 
-  // Sync internal storage whenever entities change
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map(doc => doc.data() as Entity);
+        console.log(`Vault sync: ${data.length} items active.`);
+        setEntities(data);
+        hasLoadedFromStorage.current = true;
+      }, (error) => {
+        console.error("Firestore Sync Error:", error);
+        handleFirestoreError(error, OperationType.LIST, 'entities');
+      });
+
+      return () => unsubscribe();
+    }
+  }, [isAuthReady, user]);
+
+  // Background AI Strategist
   useEffect(() => {
-    if (isAuthenticated) {
-      storage.saveEntities(entities);
-    }
-  }, [entities, isAuthenticated]);
+    const runStrategist = async () => {
+      if (!user || entities.length === 0) return;
 
-  const addEntity = (entity: Entity) => setEntities(prev => [entity, ...prev]);
+      // Find tasks that need strategy
+      const rawTasks = entities.filter(e => 
+        e.type === 'task' && 
+        !e.strategicObjective && 
+        !processingTasks.has(e.id)
+      );
+
+      if (rawTasks.length === 0) return;
+
+      // Process the most recent raw task
+      const task = rawTasks[0];
+      setProcessingTasks(prev => new Set(prev).add(task.id));
+
+      console.log(`AI Strategist: Processing raw task "${task.title}"...`);
+
+      try {
+        // Get relevant brain items (knowledge entities)
+        const knowledgeItems = entities
+          .filter(e => e.type === 'knowledge')
+          .map(e => e.title);
+
+        const strategy = await generateTaskStrategy(task.title, task.notes || '', knowledgeItems);
+
+        if (strategy) {
+          const updatedTask = {
+            ...task,
+            title: strategy.refinedTitle || task.title,
+            strategicObjective: strategy.strategicObjective,
+            successMetric: strategy.successMetric,
+            notes: strategy.expandedNotes || task.notes,
+            subtasks: strategy.subtasks,
+            updatedAt: new Date().toISOString()
+          };
+
+          await storage.updateEntity(updatedTask);
+          console.log(`AI Strategist: Task "${task.title}" enhanced successfully.`);
+        }
+      } catch (error) {
+        console.error("AI Strategist Error:", error);
+      } finally {
+        // We don't remove from processingTasks to avoid re-processing in the same session
+        // if the update fails or doesn't immediately reflect in 'entities'
+      }
+    };
+
+    const timeout = setTimeout(runStrategist, 2000); // Debounce
+    return () => clearTimeout(timeout);
+  }, [entities, user, processingTasks]);
+
+  const addEntity = async (entity: Entity) => {
+    if (!user) return;
+    const entityWithUid = { ...entity, uid: user.uid };
+    await storage.addEntity(entityWithUid);
+  };
   
-  const deleteEntity = (id: string) => setEntities(prev => prev.filter(e => e.id !== id));
+  const deleteEntity = async (id: string) => {
+    await storage.deleteEntity(id);
+  };
   
-  const updateEntity = (entity: Entity) => {
-    setEntities(prev => prev.map(e => 
-      e.id === entity.id 
-        ? { ...entity, updatedAt: new Date().toISOString() } 
-        : e
-    ));
+  const updateEntity = async (entity: Entity) => {
+    if (!user) return;
+    const updated = { ...entity, uid: user.uid, updatedAt: new Date().toISOString() };
+    await storage.updateEntity(updated);
   };
 
-  const handleLogout = () => {
-    // Note: We don't clear storage on logout anymore so data persists for next login
-    setEntities([]);
-    setIsAuthenticated(false);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      hasLoadedFromStorage.current = false;
+      setEntities([]);
+      setProcessingTasks(new Set());
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
-  if (isAuthenticated === null) {
+  const handleImport = async (importedEntities: Entity[]) => {
+    if (!user) return;
+    const entitiesWithUid = importedEntities.map(e => ({ ...e, uid: user.uid }));
+    hasLoadedFromStorage.current = true;
+    setEntities(entitiesWithUid);
+    await storage.saveEntities(entitiesWithUid);
+  };
+
+  if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center font-mono text-[10px] text-slate-400 uppercase tracking-[0.2em] animate-pulse">
         Initializing OS...
@@ -122,22 +301,25 @@ const App: React.FC = () => {
     );
   }
 
-  if (!isAuthenticated) {
-    return <AuthGate onAuthenticated={() => setIsAuthenticated(true)} />;
+  if (!user) {
+    return <AuthGate />;
   }
 
   return (
-    <Router>
-      <Layout onLogout={handleLogout}>
-        <Routes>
-          <Route path="/" element={<Dashboard entities={entities} />} />
-          <Route path="/brain" element={<KnowledgeBrain entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} />} />
-          <Route path="/jobs" element={<JobsPipeline entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} />} />
-          <Route path="/clients" element={<ClientsTasks entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} />} />
-          <Route path="/subscriptions" element={<Subscriptions entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} />} />
-        </Routes>
-      </Layout>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Layout onLogout={handleLogout} entities={entities} onImport={handleImport}>
+          <Routes>
+            <Route path="/" element={<Dashboard entities={entities} processingTasks={processingTasks} />} />
+            <Route path="/brain" element={<KnowledgeBrain entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} processingTasks={processingTasks} />} />
+            <Route path="/jobs" element={<JobsPipeline entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} processingTasks={processingTasks} />} />
+            <Route path="/clients" element={<ClientsTasks entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} processingTasks={processingTasks} />} />
+            <Route path="/subscriptions" element={<Subscriptions entities={entities} onAdd={addEntity} onDelete={deleteEntity} onUpdate={updateEntity} processingTasks={processingTasks} />} />
+            <Route path="/developer" element={<DeveloperPortal />} />
+          </Routes>
+        </Layout>
+      </Router>
+    </ErrorBoundary>
   );
 };
 

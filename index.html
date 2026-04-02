@@ -9,6 +9,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/react-quill-new@3.3.3/dist/quill.snow.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/react-datepicker@7.6.0/dist/react-datepicker.css">
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -31,6 +33,50 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #d1d5db;
         }
+
+        /* React Quill Custom Styling */
+        .ql-container.ql-snow {
+            border: none !important;
+            font-family: 'Inter', sans-serif !important;
+            font-size: 0.875rem !important;
+        }
+        .ql-toolbar.ql-snow {
+            border: none !important;
+            border-bottom: 1px solid #f1f5f9 !important;
+            background: #f8fafc !important;
+        }
+        .ql-editor {
+            min-height: 120px;
+            padding: 1rem !important;
+        }
+        .ql-editor.ql-blank::before {
+            color: #94a3b8 !important;
+            font-style: italic !important;
+        }
+
+        /* React DatePicker Custom Styling */
+        .react-datepicker-wrapper {
+            width: 100%;
+        }
+        .react-datepicker {
+            font-family: 'Inter', sans-serif !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 1rem !important;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+        }
+        .react-datepicker__header {
+            background-color: #f8fafc !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+            border-top-left-radius: 1rem !important;
+            border-top-right-radius: 1rem !important;
+        }
+        .react-datepicker__day--selected {
+            background-color: #2563eb !important;
+            border-radius: 0.5rem !important;
+        }
+        .react-datepicker__day:hover {
+            border-radius: 0.5rem !important;
+        }
     </style>
 <script type="importmap">
 {
@@ -43,8 +89,10 @@
   }
 }
 </script>
+<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
 </body>
 </html>

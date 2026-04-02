@@ -7,7 +7,12 @@ import { scoutJobDetails } from '../services/geminiService';
 
 const GIG_STATUSES: GigPlatformStatus[] = ["Scouting", "Assessing", "Waitlisted", "Active"];
 
-export const JobsPipeline: React.FC<{ entities: Entity[], onAdd: (e: Entity) => void, onDelete: (id: string) => void }> = ({ entities, onAdd, onDelete }) => {
+export const JobsPipeline: React.FC<{ 
+  entities: Entity[], 
+  onAdd: (e: Entity) => void, 
+  onDelete: (id: string) => void,
+  processingTasks: Set<string>
+}> = ({ entities, onAdd, onDelete, processingTasks }) => {
   const [activeTab, setActiveTab] = useState<JobCategory>('Discovery');
   const [activeGigStatus, setActiveGigStatus] = useState<GigPlatformStatus>('Scouting');
   const [isAdding, setIsAdding] = useState(false);
@@ -51,6 +56,7 @@ export const JobsPipeline: React.FC<{ entities: Entity[], onAdd: (e: Entity) => 
     e.preventDefault();
     const newJob: JobEntity = {
       id: crypto.randomUUID(),
+      uid: '',
       type: 'job',
       jobCategory: activeTab,
       title: `${formData.role} at ${formData.company}`,
@@ -259,7 +265,7 @@ export const JobsPipeline: React.FC<{ entities: Entity[], onAdd: (e: Entity) => 
             {discoveryJobs.filter(j => j.platformStatus === activeGigStatus).length > 0 ? (
               discoveryJobs.filter(j => j.platformStatus === activeGigStatus).map(job => (
                 <div key={job.id} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                  <EntityCard entity={job} onDelete={onDelete} />
+                  <EntityCard entity={job} onDelete={onDelete} isProcessing={processingTasks.has(job.id)} />
                 </div>
               ))
             ) : (
@@ -288,7 +294,7 @@ export const JobsPipeline: React.FC<{ entities: Entity[], onAdd: (e: Entity) => 
                 <div className="space-y-4">
                   {pipelineJobs.filter(j => j.status === status).map(job => (
                     <div key={job.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-                      <EntityCard entity={job} onDelete={onDelete} />
+                      <EntityCard entity={job} onDelete={onDelete} isProcessing={processingTasks.has(job.id)} />
                     </div>
                   ))}
                 </div>

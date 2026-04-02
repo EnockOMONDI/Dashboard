@@ -4,7 +4,7 @@ import { Entity, KnowledgeEntity, TaskEntity, JobEntity, SubscriptionEntity } fr
 import { getDailyRecommendations } from '../services/geminiService';
 import { EntityCard } from '../components/EntityCard';
 
-export const Dashboard: React.FC<{ entities: Entity[] }> = ({ entities }) => {
+export const Dashboard: React.FC<{ entities: Entity[], processingTasks: Set<string> }> = ({ entities, processingTasks }) => {
   const [recommendation, setRecommendation] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
@@ -61,8 +61,11 @@ export const Dashboard: React.FC<{ entities: Entity[] }> = ({ entities }) => {
             </div>
             <div className="w-px h-8 bg-slate-100"></div>
             <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Monthly Burn</p>
-              <p className="text-lg font-bold text-slate-900">${stats.monthlyBurn.toFixed(0)}</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">OS Persistence</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className="text-lg font-bold text-slate-900">{entities.length}</span>
+                <span className="text-[9px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 uppercase">Live Items</span>
+              </div>
             </div>
           </div>
         </div>
@@ -106,7 +109,12 @@ export const Dashboard: React.FC<{ entities: Entity[] }> = ({ entities }) => {
                 </div>
               </div>
             ) : (
-              <p className="text-slate-400">Add data to generate your daily leverage report.</p>
+              <div className="space-y-4">
+                <p className="text-slate-400 font-medium">Add data to generate your daily leverage report.</p>
+                <div className="p-12 border-2 border-dashed border-slate-100 rounded-[2rem] text-center bg-slate-50/30">
+                  <p className="text-xs text-slate-400 italic">"The quality of your OS depends on the integrity of your capture."</p>
+                </div>
+              </div>
             )}
           </div>
         </section>
@@ -115,7 +123,7 @@ export const Dashboard: React.FC<{ entities: Entity[] }> = ({ entities }) => {
         <section className="bg-slate-900 text-white rounded-[2rem] p-8 shadow-2xl flex flex-col">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">Executive Protocol</h2>
-            <div className="text-[10px] bg-slate-800 px-2 py-1 rounded-lg font-mono text-slate-400">v1.2.0</div>
+            <div className="text-[10px] bg-slate-800 px-2 py-1 rounded-lg font-mono text-slate-400">v1.2.1</div>
           </div>
           <ul className="space-y-5 flex-1">
             {dailyChecklist.map((item: string, i: number) => (
@@ -152,11 +160,11 @@ export const Dashboard: React.FC<{ entities: Entity[] }> = ({ entities }) => {
           <div className="space-y-4">
             {urgentTasks.length > 0 || stats.activeGigs.length > 0 ? (
               <>
-                {urgentTasks.map(task => <EntityCard key={task.id} entity={task} />)}
+                {urgentTasks.map(task => <EntityCard key={task.id} entity={task} isProcessing={processingTasks.has(task.id)} />)}
                 {stats.activeGigs.map(gig => (
                   <div key={gig.id} className="relative">
                     <div className="absolute -left-1 top-4 w-1.5 h-12 bg-green-500 rounded-full z-10 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
-                    <EntityCard entity={gig} />
+                    <EntityCard entity={gig} isProcessing={processingTasks.has(gig.id)} />
                   </div>
                 ))}
               </>
@@ -175,7 +183,7 @@ export const Dashboard: React.FC<{ entities: Entity[] }> = ({ entities }) => {
           </div>
           <div className="grid grid-cols-1 gap-4">
              {entities.filter(e => e.type === 'knowledge' && e.priority === 'High').slice(0, 3).map(item => (
-               <EntityCard key={item.id} entity={item} />
+               <EntityCard key={item.id} entity={item} isProcessing={processingTasks.has(item.id)} />
              ))}
              {entities.filter(e => e.type === 'knowledge' && e.priority === 'High').length === 0 && (
                <div className="p-20 border-2 border-dashed border-slate-100 rounded-[2rem] text-center">

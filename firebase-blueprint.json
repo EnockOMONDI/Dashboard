@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "Entity": {
+      "title": "Entity",
+      "description": "A generic data entity in the ThinkStack system",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "uid": { "type": "string", "description": "Owner's user ID" },
+        "type": { "type": "string", "description": "Type of entity (knowledge, job, client, task, subscription)" },
+        "title": { "type": "string", "description": "Display title" },
+        "notes": { "type": "string", "description": "Main text content" },
+        "status": { "type": "string", "description": "Current status" },
+        "priority": { "type": "string", "description": "Priority level" },
+        "tags": { "type": "array", "items": { "type": "string" }, "description": "List of tags" },
+        "links": { "type": "array", "items": { "type": "string" }, "description": "List of links" },
+        "relatedIds": { "type": "array", "items": { "type": "string" }, "description": "List of related entity IDs" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last update timestamp" },
+        "category": { "type": "string", "description": "Knowledge category" },
+        "summary": { "type": "string", "description": "Knowledge summary" },
+        "subtasks": { "type": "array", "description": "List of subtasks" },
+        "strategicObjective": { "type": "string", "description": "Strategic objective" },
+        "successMetric": { "type": "string", "description": "Success metric" },
+        "toolIds": { "type": "array", "items": { "type": "string" }, "description": "List of tool IDs" },
+        "clientId": { "type": "string", "description": "Related client ID" },
+        "company": { "type": "string", "description": "Company name" },
+        "role": { "type": "string", "description": "Job role" },
+        "jobLink": { "type": "string", "description": "Link to job posting" },
+        "userEmail": { "type": "string", "description": "Email for inbox sweep" },
+        "cost": { "type": "number", "description": "Subscription cost" },
+        "billingCycle": { "type": "string", "description": "Billing cycle (Monthly/Yearly)" }
+      },
+      "required": ["id", "uid", "type", "title", "createdAt", "updatedAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile mapping email to UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User ID" },
+        "email": { "type": "string", "description": "User email" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "lastLogin": { "type": "string", "format": "date-time", "description": "Last login timestamp" }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/entities/{entityId}": {
+      "schema": "Entity",
+      "description": "Collection of all entities owned by users"
+    },
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles for lookup"
+    },
+    "/public_inbox/{docId}": {
+      "schema": "Entity",
+      "description": "Temporary storage for tasks sent to users not yet registered"
+    }
+  }
+}

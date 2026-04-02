@@ -1,5 +1,5 @@
 {
-  "name": "ThinkStack",
-  "description": "A high-leverage personal operating system for builders, consultants, and creators to connect knowledge with execution.",
+  "name": "ThinkStack V2",
+  "description": "A high-leverage personal operating system for builders, consultants, and creators, now powered by a real database backend for persistent, multi-session knowledge management.",
   "requestFramePermissions": []
 }

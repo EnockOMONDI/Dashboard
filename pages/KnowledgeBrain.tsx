@@ -10,8 +10,9 @@ export const KnowledgeBrain: React.FC<{
   entities: Entity[], 
   onAdd: (e: Entity) => void, 
   onDelete: (id: string) => void,
-  onUpdate: (e: Entity) => void
-}> = ({ entities, onAdd, onDelete, onUpdate }) => {
+  onUpdate: (e: Entity) => void,
+  processingTasks: Set<string>
+}> = ({ entities, onAdd, onDelete, onUpdate, processingTasks }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<KnowledgeCategory>('ai-code');
@@ -67,6 +68,7 @@ export const KnowledgeBrain: React.FC<{
     } else {
       const newEntity: KnowledgeEntity = {
         id: crypto.randomUUID(),
+        uid: '',
         type: 'knowledge',
         createdAt: new Date().toISOString(),
         ...commonData
@@ -206,7 +208,7 @@ export const KnowledgeBrain: React.FC<{
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {knowledgeItems.length > 0 ? (
           knowledgeItems.map(item => (
-            <EntityCard key={item.id} entity={item} onDelete={onDelete} onClick={handleEdit} />
+            <EntityCard key={item.id} entity={item} onDelete={onDelete} onClick={handleEdit} isProcessing={processingTasks.has(item.id)} />
           ))
         ) : (
           <div className="col-span-full py-20 text-center text-slate-400 border-2 border-dashed border-slate-100 rounded-3xl">
